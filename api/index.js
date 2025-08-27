@@ -1,18 +1,23 @@
-const serverless = require('@vendia/serverless-express');
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', 'config.env') });
 
 const app = require('../app');
 const { connectToDatabase } = require('../db');
 
-let cachedHandler;
+let dbReady = null;
 
 module.exports = async (req, res) => {
-  if (!cachedHandler) {
-    await connectToDatabase(process.env.MONGODB_URI);
-    cachedHandler = serverless({ app });
+  try {
+    if (!dbReady) {
+      dbReady = connectToDatabase(process.env.MONGODB_URI);
+    }
+    await dbReady;
+    return app(req, res);
+  } catch (err) {
+    console.error('API handler error:', err);
+    res.statusCode = 500;
+    res.end('Internal Server Error');
   }
-  return cachedHandler(req, res);
 };
 
 
