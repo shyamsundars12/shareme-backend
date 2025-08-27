@@ -2,25 +2,37 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
 const auth = require('../middleware/auth');
 
 const router = express.Router();
 
-// Configure multer for profile photo uploads
-const profilePhotoStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, 'uploads/profiles');
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, 'profile-' + uniqueSuffix + path.extname(file.originalname));
+// Configure multer for profile photo uploads (avoid disk writes on Vercel)
+const isServerless = !!process.env.VERCEL;
+
+let storage;
+if (isServerless) {
+  storage = multer.memoryStorage();
+} else {
+  const profilesDir = path.join('uploads', 'profiles');
+  if (!fs.existsSync(profilesDir)) {
+    fs.mkdirSync(profilesDir, { recursive: true });
   }
-});
+  storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+      cb(null, profilesDir);
+    },
+    filename: (req, file, cb) => {
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      cb(null, 'profile-' + uniqueSuffix + path.extname(file.originalname));
+    }
+  });
+}
 
 const profilePhotoUpload = multer({
-  storage: profilePhotoStorage,
+  storage,
   limits: {
     fileSize: 5 * 1024 * 1024 // 5MB limit
   },
@@ -70,7 +82,7 @@ router.post('/register', profilePhotoUpload.single('profilePhoto'), [
 
     // Handle profile photo
     let profilePhotoUrl = null;
-    if (req.file) {
+    if (req.file && !isServerless && req.file.filename) {
       profilePhotoUrl = `/uploads/profiles/${req.file.filename}`;
     }
 
